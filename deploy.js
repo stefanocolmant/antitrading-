@@ -97,41 +97,6 @@ function ow(roleId, allow, deny) {
     return { id: roleId, type: 0, allow: allow || ZERO, deny: deny || ZERO };
 }
 
-// ── Welcome Embed ────────────────────────────────────────────────────────────
-function buildWelcomeEmbed() {
-    return {
-        embeds: [{
-            title: "Welcome to Praxis Systems",
-            description: "Your gateway to professional algorithmic trading systems. We're glad you're here.",
-            color: 0xf5a623,
-            fields: [
-                {
-                    name: "📌 What is Praxis Systems?",
-                    value: "Praxis Systems gives you access to institutional-grade algorithmic trading systems. Our algos execute trades automatically — you just follow along or let the system work for you.",
-                    inline: false,
-                },
-                {
-                    name: "🚀 Getting Started",
-                    value: "1. Read the **#server-guide** to understand each section\n2. Chat with the community in **#general-chat**\n3. Upgrade to Algo 1 or Algo 2 to access live signals\n4. Need help? Head to **#create-ticket**",
-                    inline: false,
-                },
-                {
-                    name: "📜 Server Rules",
-                    value: "• Be respectful to all members\n• Do not share signals or strategies outside this server\n• No financial advice — all content is educational\n• No spam, self-promo, or solicitation\n• Follow Discord's Terms of Service",
-                    inline: false,
-                },
-                {
-                    name: "⚠️ Disclaimer",
-                    value: "Trading futures and other financial instruments involves substantial risk. Past performance is not indicative of future results. Nothing shared here constitutes financial advice.",
-                    inline: false,
-                },
-            ],
-            footer: { text: "Praxis Systems — Algorithmic Trading Systems" },
-            timestamp: new Date().toISOString(),
-        }],
-    };
-}
-
 // ── Server Guide Embed ───────────────────────────────────────────────────────
 function buildServerGuideEmbed() {
     return {
@@ -539,7 +504,6 @@ function buildTicketEmbed() {
     console.log("── STEP 8: Posting pre-populated messages ──");
 
     const messagePosts = [
-        { channel: "welcome", embed: buildWelcomeEmbed, label: "Welcome embed" },
         { channel: "server-guide", embed: buildServerGuideEmbed, label: "Server guide" },
         { channel: "wins-and-pnl", embed: buildPnlEmbed, label: "PnL intro" },
         { channel: "create-ticket", embed: buildTicketEmbed, label: "Ticket guide" },
