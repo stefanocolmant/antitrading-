@@ -451,7 +451,7 @@ function buildTicketEmbed() {
         console.log(`   🔒 ${chName} → read-only`);
         await api("PATCH", `/channels/${channels[chName].id}`, {
             permission_overwrites: [
-                ow(R["@everyone"], ZERO, DENY_VIEW),
+                ow(R["@everyone"], BASIC_VIEW, DENY_SEND),
                 ow(R["Free"], BASIC_VIEW, DENY_SEND),
                 ow(R["Scalp Pro"], BASIC_VIEW, DENY_SEND),
                 ow(R["Wick Hunter"], BASIC_VIEW, DENY_SEND),
@@ -464,7 +464,7 @@ function buildTicketEmbed() {
     console.log("   🔒 announcements → Admin-only posting");
     await api("PATCH", `/channels/${channels["announcements"].id}`, {
         permission_overwrites: [
-            ow(R["@everyone"], ZERO, DENY_VIEW),
+            ow(R["@everyone"], BASIC_VIEW, DENY_SEND),
             ow(R["Free"], BASIC_VIEW, DENY_SEND),
             ow(R["Scalp Pro"], BASIC_VIEW, DENY_SEND),
             ow(R["Wick Hunter"], BASIC_VIEW, DENY_SEND),
