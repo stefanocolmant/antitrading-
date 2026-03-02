@@ -331,7 +331,7 @@ function buildTicketEmbed() {
 
     const catOverwrites = {
         "📋 START HERE": [
-            ow(R["@everyone"], ZERO, DENY_VIEW),
+            ow(R["@everyone"], BASIC_VIEW, DENY_SEND),
             ow(R["Free"], BASIC_VIEW, ZERO),
             ow(R["Scalp Pro"], BASIC_VIEW, ZERO),
             ow(R["Wick Hunter"], BASIC_VIEW, ZERO),
