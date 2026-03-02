@@ -531,8 +531,90 @@ async function logSecurity(message, color = COLORS.gray) {
     }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// FEATURE 8 — ANTI-SPAM / RAID PROTECTION
+// ══════════════════════════════════════════════════════════════════════════════
+const spamTracker = new Map(); // userId → { count, firstMsg, warned }
+const SPAM_WINDOW_MS = 10_000;   // 10 seconds
+const SPAM_THRESHOLD = 5;        // 5 messages in 10s = spam
+const TIMEOUT_MINUTES = 10;
+const ACCOUNT_AGE_DAYS = 7;       // flag accounts newer than 7 days
+const LINK_REGEX = /https?:\/\/|discord\.gg\//i;
+
+client.on(Events.MessageCreate, async (spamMsg) => {
+    if (spamMsg.author.bot) return;
+    if (!spamMsg.guild || spamMsg.guild.id !== GUILD_ID) return;
+    if (!spamMsg.member) return;
+
+    // Skip Admin/Support — never spam-check staff
+    if (
+        spamMsg.member.roles.cache.some((r) => r.name === "Admin" || r.name === "Support")
+    ) return;
+
+    const userId = spamMsg.author.id;
+    const isNewAcct = (Date.now() - spamMsg.author.createdTimestamp) < ACCOUNT_AGE_DAYS * 86_400_000;
+    const hasLink = LINK_REGEX.test(spamMsg.content);
+    const now = Date.now();
+
+    // Track message rate
+    let tracker = spamTracker.get(userId) || { count: 0, firstMsg: now, warned: false };
+    if (now - tracker.firstMsg > SPAM_WINDOW_MS) {
+        tracker = { count: 0, firstMsg: now, warned: false };
+    }
+    tracker.count++;
+    spamTracker.set(userId, tracker);
+
+    const isSpamming = tracker.count >= SPAM_THRESHOLD;
+    const isLinkAbuse = isNewAcct && hasLink;
+
+    if (!isSpamming && !isLinkAbuse) return;
+
+    try {
+        // Delete the triggering message
+        await spamMsg.delete().catch(() => { });
+
+        // Apply timeout (10 minutes)
+        await spamMsg.member.timeout(
+            TIMEOUT_MINUTES * 60 * 1000,
+            isSpamming ? "Auto-timeout: message spam" : "Auto-timeout: new account posted links"
+        );
+
+        // Warn in channel
+        const reason = isSpamming
+            ? `⚠️ <@${userId}> has been temporarily timed out for **${TIMEOUT_MINUTES} minutes** due to spam.`
+            : `⚠️ <@${userId}> has been temporarily timed out. New accounts may not post links until verified.`;
+
+        const warningMsg = await spamMsg.channel.send(reason);
+        setTimeout(() => warningMsg.delete().catch(() => { }), 8000);
+
+        // Log to #security-logs
+        if (securityLogsId) {
+            const logCh = await guild.channels.fetch(securityLogsId);
+            const logEmbed = new EmbedBuilder()
+                .setTitle("🛡️ Anti-Spam Action")
+                .setDescription(
+                    `**User:** <@${userId}> (${spamMsg.author.username})\n` +
+                    `**Reason:** ${isSpamming ? `Sent ${tracker.count} messages in ${SPAM_WINDOW_MS / 1000}s` : "New account posted link"}\n` +
+                    `**Channel:** <#${spamMsg.channel.id}>\n` +
+                    `**Timeout:** ${TIMEOUT_MINUTES} minutes\n` +
+                    `**Account Age:** ${Math.floor((Date.now() - spamMsg.author.createdTimestamp) / 86_400_000)} days`
+                )
+                .setColor(COLORS.red)
+                .setTimestamp();
+            await logCh.send({ embeds: [logEmbed] });
+        }
+
+        // Reset tracker after action
+        spamTracker.delete(userId);
+        console.log(`🛡️ Timed out ${spamMsg.author.username} (${isSpamming ? "spam" : "link abuse"})`);
+    } catch (e) {
+        console.error("Anti-spam error:", e.message);
+    }
+});
+
 // ── Login ────────────────────────────────────────────────────────────────────
 client.login(BOT_TOKEN).catch((err) => {
+
     console.error("❌  Failed to login:", err.message);
     process.exit(1);
 });

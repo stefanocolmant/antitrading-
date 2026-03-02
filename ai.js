@@ -146,6 +146,8 @@ let adminRoleId = null;
 let supportRoleId = null;
 let scalpProRoleId = null;
 let wickHunterRoleId = null;
+let communityChannelId = null;  // For role selector embed
+let announcementsId = null;  // For economic calendar
 
 // COLORS
 const COLORS = {
@@ -177,7 +179,23 @@ client.once(Events.ClientReady, async () => {
         if (ch.name === "general-chat") generalChatId = ch.id;
         if (ch.name === "security-logs") securityLogsId = ch.id;
         if (ch.name === "create-ticket") createTicketId = ch.id;
+        if (ch.name === "announcements") announcementsId = ch.id;
+        if (ch.type === ChannelType.GuildCategory && ch.name.includes("COMMUNITY")) communityChannelId = null; // handled below
     });
+    // Find a text channel in COMMUNITY category for role selector
+    channels.forEach((ch) => {
+        if (ch && ch.name === "general-chat" && !communityChannelId) communityChannelId = ch.id;
+    });
+
+    // Ensure alert roles exist, create if not
+    if (!roles.find((r) => r.name === "ScalpProAlerts")) {
+        await guild.roles.create({ name: "ScalpProAlerts", color: "#2ecc71", reason: "Alert role for Scalp Pro signal pings" });
+        console.log("   🆕 Created ScalpProAlerts role");
+    }
+    if (!roles.find((r) => r.name === "WickHunterAlerts")) {
+        await guild.roles.create({ name: "WickHunterAlerts", color: "#e74c3c", reason: "Alert role for Wick Hunter signal pings" });
+        console.log("   🆕 Created WickHunterAlerts role");
+    }
 
     // Create #ask-praxis if it doesn't exist
     if (!aiChannelId) {
@@ -189,6 +207,9 @@ client.once(Events.ClientReady, async () => {
 
     // Post onboarding embed in #ask-praxis
     await postAiWelcomeEmbed();
+
+    // Post role selector in #general-chat
+    await postRoleSelectorEmbed();
 
     // Start scheduled tasks
     startScheduler();
@@ -735,8 +756,195 @@ function startScheduler() {
         }
     });
 
-    console.log("   ⏰ Schedulers started (daily briefing + ticket cleanup)");
+    // ── FEATURE 5: Economic Calendar — Mondays at 7AM ET ─────────────────────
+    cron.schedule("0 7 * * 1", async () => {
+        try { await postEconomicCalendar(); }
+        catch (e) { console.error("Economic calendar error:", e.message); }
+    }, { timezone: "America/New_York" });
+
+    // ── FEATURE 4: Onboarding check — every 30 minutes ────────────────────────
+    cron.schedule("*/30 * * * *", async () => {
+        try { await checkOnboardingQueue(); }
+        catch (e) { console.error("Onboarding cron error:", e.message); }
+    });
+
+    console.log("   ⏰ Schedulers started (daily briefing + ticket cleanup + Monday calendar)");
 }
+
+// ── Economic Calendar: Human-friendly descriptions for event types ────────────
+const EVENT_DESCRIPTIONS = {
+    "Non-Farm Employment Change": "Measures new jobs added to the US economy last month. A big beat = risk-on for equities/NQ. A miss = potential selloff.",
+    "Unemployment Rate": "% of the workforce without jobs. Lower = stronger economy. Surprise moves can whipsaw NQ and Gold.",
+    "CPI m/m": "Consumer Price Index month-over-month. The most important inflation number. Higher than expected = Fed stays hawkish = bearish for NQ, bullish for Gold short-term.",
+    "Core CPI m/m": "CPI excluding food & energy. Fed watches this closely for rate decisions. Impacts NQ volatility significantly.",
+    "PPI m/m": "Producer Price Index — upstream inflation indicator. Often signals where CPI is headed.",
+    "FOMC Statement": "Federal Reserve rate decision + statement. One of the most volatile events of the year for futures markets. Expect wide spreads and fast moves.",
+    "Fed Chair Press Conference": "Powell speaks after FOMC. Markets parse every word. High volatility on NQ and Gold expected.",
+    "GDP q/q": "Quarterly economic growth. A miss can trigger risk-off across equities and safe-haven demand in Gold.",
+    "Retail Sales m/m": "Measures consumer spending. Strong = bullish for stocks. Weak = potential downside for NQ.",
+    "ISM Manufacturing PMI": "Industry health index. Below 50 = contraction. Key leading indicator for market direction.",
+    "ISM Services PMI": "Services sector PMI. US economy is 70% services — this number matters.",
+    "Initial Jobless Claims": "Weekly job loss claims. Rising claims = weakening economy = can spike Gold as safe haven.",
+};
+
+function getEventDescription(eventName) {
+    for (const [key, val] of Object.entries(EVENT_DESCRIPTIONS)) {
+        if (eventName.toLowerCase().includes(key.toLowerCase())) return val;
+    }
+    return "High-impact economic release — expect elevated volatility. Manage your risk carefully around this event.";
+}
+
+async function postEconomicCalendar() {
+    if (!announcementsId) return;
+
+    // Fetch from Forex Factory's public JSON calendar
+    let events = [];
+    try {
+        const r = await fetch("https://nfs.faireconomy.media/ff_calendar_thisweek.json", {
+            headers: { "User-Agent": "PraxisSystems/1.0" },
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const all = await r.json();
+        // Filter: USD only, HIGH impact only, this week
+        events = all.filter((e) =>
+            e.impact === "High" &&
+            (e.currency === "USD" || e.currency === "ALL")
+        ).slice(0, 8); // max 8 events
+    } catch (fetchErr) {
+        console.warn("Forex Factory fetch failed:", fetchErr.message, "— using fallback.");
+        // Fallback: common weekly events
+        events = [
+            { title: "Check DXY and macro headlines this week for high-impact events.", date: new Date().toISOString(), currency: "USD", impact: "High", forecast: "N/A", previous: "N/A" },
+        ];
+    }
+
+    if (events.length === 0) return; // No high-impact events this week
+
+    const ch = await guild.channels.fetch(announcementsId);
+    const weekStr = new Date().toLocaleDateString("en-US", {
+        month: "long", day: "numeric", year: "numeric", timeZone: "America/New_York",
+    });
+
+    const fields = events.slice(0, 8).map((e) => {
+        const dateStr = e.date
+            ? new Date(e.date).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })
+            : "TBD";
+        const forecast = e.forecast ? ` | Forecast: \`${e.forecast}\`` : "";
+        const previous = e.previous ? ` | Previous: \`${e.previous}\`` : "";
+        return {
+            name: `🗓 ${e.title || e.country}${e.currency ? ` (${e.currency})` : ""}`,
+            value: `**When:** ${dateStr} ET${forecast}${previous}\n*${getEventDescription(e.title)}*`,
+            inline: false,
+        };
+    });
+
+    const embed = new EmbedBuilder()
+        .setTitle(`📅 High-Impact Economic Events — Week of ${weekStr}`)
+        .setDescription(
+            "These are the **high-impact** macro releases this week that could cause significant volatility on **NQ** and **Gold**.\n\n" +
+            "⚡ **Pro tip:** Consider reducing size or staying flat during the 5 minutes before and after each release."
+        )
+        .setColor(COLORS.blue)
+        .addFields(fields)
+        .setFooter({ text: "Praxis Systems — Economic Calendar • Source: Forex Factory" })
+        .setTimestamp();
+
+    await ch.send({ embeds: [embed] });
+    console.log(`   📅 Economic calendar posted: ${events.length} high-impact events`);
+}
+
+// ── Onboarding Queue Processor ────────────────────────────────────────────────
+async function checkOnboardingQueue() {
+    const onboarding = loadOnboarding();
+    let changed = false;
+
+    for (const [userId, data] of Object.entries(onboarding)) {
+        const hoursSinceEnroll = (Date.now() - data.enrolledAt) / 3_600_000;
+
+        for (const msg of ONBOARDING_MESSAGES) {
+            if (msg.day === 1) continue; // Day 1 sent immediately
+            if (data.sentDays.includes(msg.day)) continue;
+            if (hoursSinceEnroll >= msg.delayHours) {
+                await sendOnboardingDm(userId, msg);
+                data.sentDays.push(msg.day);
+                changed = true;
+                console.log(`   📬 Sent Day ${msg.day} onboarding DM to ${data.username}`);
+            }
+        }
+    }
+
+    if (changed) saveOnboarding(onboarding);
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FEATURE 6 — SELF-ASSIGN ALERT ROLES (Role Selector)
+
+// ══════════════════════════════════════════════════════════════════════════════
+async function postRoleSelectorEmbed() {
+    if (!generalChatId) return;
+    const ch = await guild.channels.fetch(generalChatId);
+    const msgs = await ch.messages.fetch({ limit: 20 });
+    if (msgs.some((m) => m.author.id === client.user.id && m.embeds?.[0]?.title?.includes("Signal Alerts"))) return;
+
+    const embed = new EmbedBuilder()
+        .setTitle("🔔 Signal Alert Roles")
+        .setDescription(
+            "Get pinged when a signal fires! Click a button below to toggle your alert roles.\n\n" +
+            "**ScalpProAlerts** — get notified for every Scalp Pro signal\n" +
+            "**WickHunterAlerts** — get notified for every Wick Hunter signal\n\n" +
+            "*Click again to remove the role.*"
+        )
+        .setColor(COLORS.orange)
+        .setFooter({ text: "Praxis Systems — You can toggle these anytime" });
+
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("toggle_scalp_alert").setLabel("📊 Scalp Pro Alerts").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId("toggle_wick_alert").setLabel("📈 Wick Hunter Alerts").setStyle(ButtonStyle.Danger),
+    );
+
+    await ch.send({ embeds: [embed], components: [row] });
+    console.log("   ✔ Role selector embed posted in #general-chat");
+}
+
+// Handle role toggle buttons — added to the unified InteractionCreate listener above (handleSlashCommand)
+client.on(Events.InteractionCreate, async (interaction) => {
+    if (!interaction.isButton()) return;
+    if (!interaction.guild) return;
+
+    const userId = interaction.user.id;
+    const member = interaction.member || await guild.members.fetch(userId);
+
+    if (interaction.customId === "toggle_scalp_alert") {
+        const freshRoles = await guild.roles.fetch();
+        const role = freshRoles.find((r) => r.name === "ScalpProAlerts");
+        if (!role) return interaction.reply({ content: "Role not found. Please contact an admin.", ephemeral: true });
+        const has = member.roles.cache.has(role.id);
+        if (has) {
+            await member.roles.remove(role);
+            await interaction.reply({ content: "✅ Removed **ScalpProAlerts** — you won't be pinged for Scalp Pro signals.", ephemeral: true });
+        } else {
+            await member.roles.add(role);
+            await interaction.reply({ content: "✅ Added **ScalpProAlerts** — you'll be pinged when a Scalp Pro signal fires!", ephemeral: true });
+        }
+        return;
+    }
+
+    if (interaction.customId === "toggle_wick_alert") {
+        const freshRoles = await guild.roles.fetch();
+        const role = freshRoles.find((r) => r.name === "WickHunterAlerts");
+        if (!role) return interaction.reply({ content: "Role not found. Please contact an admin.", ephemeral: true });
+        const has = member.roles.cache.has(role.id);
+        if (has) {
+            await member.roles.remove(role);
+            await interaction.reply({ content: "✅ Removed **WickHunterAlerts** — you won't be pinged for Wick Hunter signals.", ephemeral: true });
+        } else {
+            await member.roles.add(role);
+            await interaction.reply({ content: "✅ Added **WickHunterAlerts** — you'll be pinged when a Wick Hunter signal fires!", ephemeral: true });
+        }
+        return;
+    }
+});
 
 // ── Login ─────────────────────────────────────────────────────────────────────
 client.login(BOT_TOKEN).catch((err) => {
