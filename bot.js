@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ─────────────────────────────────────────────────────────────────────────────
-// PassPro Premium Bot — Persistent Discord.js v14 Bot
+// Praxis Premium Bot — Persistent Discord.js v14 Bot
 // Verification Gate • Ticket System • Welcome Messages • Security Logging
 // ─────────────────────────────────────────────────────────────────────────────
 "use strict";
@@ -62,7 +62,7 @@ const COLORS = {
 // BOT READY
 // ══════════════════════════════════════════════════════════════════════════════
 client.once(Events.ClientReady, async () => {
-    console.log(`\n🤖  PassPro Bot online as ${client.user.tag}`);
+    console.log(`\n🤖  Praxis Bot online as ${client.user.tag}`);
 
     guild = client.guilds.cache.get(GUILD_ID);
     if (!guild) {
@@ -129,7 +129,7 @@ async function postVerifyEmbed() {
     }
 
     const embed = new EmbedBuilder()
-        .setTitle("Welcome to PassPro")
+        .setTitle("Welcome to Praxis Systems")
         .setDescription(
             "Your gateway to professional algorithmic trading systems.\n\n" +
             "Please read the rules below and click **Verify** to access the server."
@@ -161,7 +161,7 @@ async function postVerifyEmbed() {
                     "Nothing shared here constitutes financial advice.",
             }
         )
-        .setFooter({ text: "PassPro — Algorithmic Trading Systems" })
+        .setFooter({ text: "Praxis Systems — Algorithmic Trading Systems" })
         .setTimestamp();
 
     const row = new ActionRowBuilder().addComponents(

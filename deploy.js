@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ─────────────────────────────────────────────────────────────────────────────
-// PassPro Discord Server-as-Code — V2 Premium Trading Server
+// Praxis Systems Discord Server-as-Code — V2 Premium Trading Server
 // Idempotent • Fintech-Grade Permissions • Discord REST API v10
 // ─────────────────────────────────────────────────────────────────────────────
 "use strict";
@@ -101,13 +101,13 @@ function ow(roleId, allow, deny) {
 function buildWelcomeEmbed() {
     return {
         embeds: [{
-            title: "Welcome to PassPro",
+            title: "Welcome to Praxis Systems",
             description: "Your gateway to professional algorithmic trading systems. We're glad you're here.",
             color: 0xf5a623,
             fields: [
                 {
-                    name: "📌 What is PassPro?",
-                    value: "PassPro gives you access to institutional-grade algorithmic trading systems. Our algos execute trades automatically — you just follow along or let the system work for you.",
+                    name: "📌 What is Praxis Systems?",
+                    value: "Praxis Systems gives you access to institutional-grade algorithmic trading systems. Our algos execute trades automatically — you just follow along or let the system work for you.",
                     inline: false,
                 },
                 {
@@ -126,7 +126,7 @@ function buildWelcomeEmbed() {
                     inline: false,
                 },
             ],
-            footer: { text: "PassPro — Algorithmic Trading Systems" },
+            footer: { text: "Praxis Systems — Algorithmic Trading Systems" },
             timestamp: new Date().toISOString(),
         }],
     };
@@ -136,7 +136,7 @@ function buildWelcomeEmbed() {
 function buildServerGuideEmbed() {
     return {
         embeds: [{
-            title: "📖 Server Guide — How to Navigate PassPro",
+            title: "📖 Server Guide — How to Navigate Praxis Systems",
             description: "Here's a quick overview of every section in this server so you know exactly where to go.",
             color: 0x2ecc71,
             fields: [
@@ -204,7 +204,7 @@ function buildTicketEmbed() {
         nextSteps: [],
     };
 
-    console.log("\n🚀  PassPro V2 Deployment Starting…");
+    console.log("\n🚀  Praxis Systems V2 Deployment Starting…");
     console.log(`    Guild: ${GUILD_ID}  |  Dry-run: ${DRY_RUN}\n`);
 
     // ─── STEP 0: Fetch Current State ──────────────────────────────────────────
@@ -661,7 +661,7 @@ function buildTicketEmbed() {
     const reportPath = `deployment-report-v2-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
     fs.writeFileSync(reportPath, reportJson, "utf8");
     console.log(`\n📄  Report saved to ${reportPath}`);
-    console.log("🎉  PassPro V2 deployment complete!\n");
+    console.log("🎉  Praxis Systems V2 deployment complete!\n");
 })().catch((err) => {
     console.error("\n💥  Deployment failed:", err.message);
     process.exit(1);

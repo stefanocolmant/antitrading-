@@ -1,7 +1,7 @@
 {
-  "name": "passpro-discord-deploy",
+  "name": "praxis-discord-deploy",
   "version": "2.0.0",
-  "description": "Idempotent Discord server-as-code deployment + premium bot for PassPro",
+  "description": "Idempotent Discord server-as-code deployment + premium bot for Praxis Systems",
   "main": "deploy.js",
   "scripts": {
     "deploy": "node deploy.js",

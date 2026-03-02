@@ -1,6 +1,6 @@
-# PassPro Discord Server-as-Code
+# Praxis Systems Discord Server-as-Code
 
-Idempotent Discord server deployment + premium bot for the PassPro algorithmic trading community.
+Idempotent Discord server deployment + premium bot for the Praxis Systems algorithmic trading community.
 
 ## What It Does
 
@@ -54,4 +54,4 @@ npm run bot
 
 ## License
 
-Private — PassPro © 2026
+Private — Praxis Systems © 2026
