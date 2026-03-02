@@ -264,7 +264,7 @@ async function postAiWelcomeEmbed() {
                 "`/mystatus` — See your subscription and registered details",
             inline: false,
         })
-        .setFooter({ text: "Praxis Systems AI — Powered by GPT-4o • Conversations are private" })
+        .setFooter({ text: "Praxis Systems AI — Conversations are private" })
         .setTimestamp();
 
     const row = new ActionRowBuilder().addComponents(
@@ -330,7 +330,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     "Need a human? Just say **\"open a ticket\"** and I'll connect you."
                 )
                 .setColor(COLORS.purple)
-                .setFooter({ text: "Praxis AI • Powered by GPT-4o" });
+                .setFooter({ text: "Praxis AI" });
 
             await thread.send({ content: `<@${userId}>`, embeds: [welcomeEmbed] });
 
@@ -411,7 +411,7 @@ client.on(Events.MessageCreate, async (message) => {
     const embed = new EmbedBuilder()
         .setDescription(reply)
         .setColor(COLORS.purple)
-        .setFooter({ text: "Praxis AI • GPT-4o" });
+        .setFooter({ text: "Praxis AI" });
 
     await message.reply({ embeds: [embed] });
 });
