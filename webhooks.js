@@ -167,4 +167,19 @@ app.listen(PORT, () => {
     console.log(`    Scalp Pro   → POST http://YOUR_IP:${PORT}/alert/scalp-pro`);
     console.log(`    Wick Hunter → POST http://YOUR_IP:${PORT}/alert/wick-hunter`);
     console.log(`    Setup guide → GET  http://YOUR_IP:${PORT}/health\n`);
+
+    // ── Keep-alive self-ping (prevents Render free tier from sleeping) ──────────
+    // Pings /health every 10 minutes so the instance stays warm for instant signal delivery
+    const SELF_URL = process.env.RENDER_EXTERNAL_URL
+        ? `${process.env.RENDER_EXTERNAL_URL}/health`
+        : `http://localhost:${PORT}/health`;
+
+    setInterval(async () => {
+        try {
+            await fetch(SELF_URL, { method: "GET" });
+            console.log(`[${new Date().toISOString()}] 💓 Keep-alive ping sent`);
+        } catch (e) {
+            console.warn(`[${new Date().toISOString()}] Keep-alive ping failed:`, e.message);
+        }
+    }, 10 * 60 * 1000); // every 10 minutes
 });
