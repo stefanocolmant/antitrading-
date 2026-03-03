@@ -147,7 +147,8 @@ let supportRoleId = null;
 let scalpProRoleId = null;
 let wickHunterRoleId = null;
 let communityChannelId = null;  // For role selector embed
-let announcementsId = null;  // For economic calendar
+let announcementsId = null;
+let calendarChannelId = null; // #economic-calendar dedicated channel
 
 // COLORS
 const COLORS = {
@@ -180,6 +181,7 @@ client.once(Events.ClientReady, async () => {
         if (ch.name === "security-logs") securityLogsId = ch.id;
         if (ch.name === "create-ticket") createTicketId = ch.id;
         if (ch.name === "announcements") announcementsId = ch.id;
+        if (ch.name === "economic-calendar") calendarChannelId = ch.id;
         if (ch.type === ChannelType.GuildCategory && ch.name.includes("COMMUNITY")) communityChannelId = null; // handled below
     });
     // Find a text channel in COMMUNITY category for role selector
@@ -200,6 +202,44 @@ client.once(Events.ClientReady, async () => {
     // Create #ask-praxis if it doesn't exist
     if (!aiChannelId) {
         aiChannelId = await createAiChannel(channels);
+    }
+
+    // Create #economic-calendar if it doesn't exist
+    if (!calendarChannelId) {
+        const startHereCat = channels.find(
+            (c) => c && c.type === ChannelType.GuildCategory && c.name.includes("START HERE")
+        );
+        const freeRId = guild.roles.cache.find((r) => r.name === "Free")?.id;
+        const spRId = guild.roles.cache.find((r) => r.name === "Scalp Pro")?.id;
+        const whRId = guild.roles.cache.find((r) => r.name === "Wick Hunter")?.id;
+
+        const overwrites = [{ id: GUILD_ID, deny: [PermissionFlagsBits.SendMessages] }];
+        if (freeRId) overwrites.push({ id: freeRId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory] });
+        if (spRId) overwrites.push({ id: spRId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory] });
+        if (whRId) overwrites.push({ id: whRId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory] });
+
+        const newCh = await guild.channels.create({
+            name: "economic-calendar",
+            type: ChannelType.GuildText,
+            topic: "Daily high-impact economic events with plain-English explanations for NQ and Gold traders.",
+            parent: startHereCat?.id || undefined,
+            permissionOverwrites: overwrites,
+        });
+        calendarChannelId = newCh.id;
+        console.log(`   🆕 Created #economic-calendar (${newCh.id})`);
+
+        // Seed with intro message
+        await newCh.send({
+            embeds: [new EmbedBuilder()
+                .setTitle("📅 Economic Calendar")
+                .setDescription(
+                    "This channel auto-posts **daily high-impact economic events** every weekday at **7:00 AM ET**.\n\n" +
+                    "Only **USD high-impact** events are shown — the ones that actually move **NQ** and **Gold**.\n\n" +
+                    "⚡ **Pro tip:** Reduce position size or stay flat during the 5 minutes before and after each release."
+                )
+                .setColor(COLORS.blue)
+                .setFooter({ text: "Praxis Systems — Economic Calendar • Powered by Forex Factory" })],
+        });
     }
 
     // Register slash commands
@@ -660,12 +700,19 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
     const userId = newMember.id;
     const userData = users[userId] || {};
 
+    const hadFree = oldMember.roles.cache.some((r) => r.name === "Free");
+    const hasFree = newMember.roles.cache.some((r) => r.name === "Free");
     const hadScalpPro = oldMember.roles.cache.some((r) => r.name === "Scalp Pro");
     const hasScalpPro = newMember.roles.cache.some((r) => r.name === "Scalp Pro");
     const hadWickHunter = oldMember.roles.cache.some((r) => r.name === "Wick Hunter");
     const hasWickHunter = newMember.roles.cache.some((r) => r.name === "Wick Hunter");
 
     let changed = false;
+
+    // Trigger onboarding DMs when Free role is first granted
+    if (!hadFree && hasFree) {
+        await startOnboarding(userId, newMember.user.username).catch(() => { });
+    }
 
     if (!hadScalpPro && hasScalpPro) {
         userData.subscription = "Scalp Pro";
@@ -688,6 +735,7 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
         console.log(`   💾 Updated users.json for ${newMember.user.username}: ${userData.subscription}`);
     }
 });
+
 
 // ══════════════════════════════════════════════════════════════════════════════
 // SCHEDULERS
@@ -756,8 +804,8 @@ function startScheduler() {
         }
     });
 
-    // ── FEATURE 5: Economic Calendar — Mondays at 7AM ET ─────────────────────
-    cron.schedule("0 7 * * 1", async () => {
+    // ── FEATURE 5: Economic Calendar — Every weekday at 7AM ET ───────────────
+    cron.schedule("0 7 * * 1-5", async () => {
         try { await postEconomicCalendar(); }
         catch (e) { console.error("Economic calendar error:", e.message); }
     }, { timezone: "America/New_York" });
@@ -768,7 +816,7 @@ function startScheduler() {
         catch (e) { console.error("Onboarding cron error:", e.message); }
     });
 
-    console.log("   ⏰ Schedulers started (daily briefing + ticket cleanup + Monday calendar)");
+    console.log("   ⏰ Schedulers started (daily briefing + ticket cleanup + daily economic calendar)");
 }
 
 // ── Economic Calendar: Human-friendly descriptions for event types ────────────
@@ -795,7 +843,10 @@ function getEventDescription(eventName) {
 }
 
 async function postEconomicCalendar() {
-    if (!announcementsId) return;
+    if (!calendarChannelId) return;
+
+    // Build today's date range in ET
+    const todayET = new Date().toLocaleDateString("en-US", { timeZone: "America/New_York" });
 
     // Fetch from Forex Factory's public JSON calendar
     let events = [];
@@ -805,52 +856,161 @@ async function postEconomicCalendar() {
         });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const all = await r.json();
-        // Filter: USD only, HIGH impact only, this week
-        events = all.filter((e) =>
-            e.impact === "High" &&
-            (e.currency === "USD" || e.currency === "ALL")
-        ).slice(0, 8); // max 8 events
+        // Filter: USD only, HIGH impact only, TODAY
+        events = all.filter((e) => {
+            if (e.impact !== "High") return false;
+            if (e.currency !== "USD" && e.currency !== "ALL") return false;
+            if (!e.date) return false;
+            const evtDay = new Date(e.date).toLocaleDateString("en-US", { timeZone: "America/New_York" });
+            return evtDay === todayET;
+        });
     } catch (fetchErr) {
-        console.warn("Forex Factory fetch failed:", fetchErr.message, "— using fallback.");
-        // Fallback: common weekly events
-        events = [
-            { title: "Check DXY and macro headlines this week for high-impact events.", date: new Date().toISOString(), currency: "USD", impact: "High", forecast: "N/A", previous: "N/A" },
-        ];
+        console.warn("Forex Factory fetch failed:", fetchErr.message);
+        events = [];
     }
 
-    if (events.length === 0) return; // No high-impact events this week
-
-    const ch = await guild.channels.fetch(announcementsId);
-    const weekStr = new Date().toLocaleDateString("en-US", {
-        month: "long", day: "numeric", year: "numeric", timeZone: "America/New_York",
+    const ch = await guild.channels.fetch(calendarChannelId);
+    const dateStr = new Date().toLocaleDateString("en-US", {
+        weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "America/New_York",
     });
 
-    const fields = events.slice(0, 8).map((e) => {
-        const dateStr = e.date
-            ? new Date(e.date).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })
-            : "TBD";
+    if (events.length === 0) {
+        // Post a quiet "all clear" for today so traders know it's clean
+        const embed = new EmbedBuilder()
+            .setTitle(`📅 Economic Calendar — ${dateStr}`)
+            .setDescription(
+                "✅ **No high-impact USD events scheduled for today.**\n\n" +
+                "Markets may be calmer than usual. Good day for clean technical setups on NQ and Gold."
+            )
+            .setColor(COLORS.green)
+            .setFooter({ text: "Praxis Systems — Economic Calendar • Source: Forex Factory" })
+            .setTimestamp();
+        await ch.send({ embeds: [embed] });
+        console.log("   📅 Economic calendar: no high-impact events today");
+        return;
+    }
+
+    const fields = events.map((e) => {
+        const timeStr = e.date
+            ? new Date(e.date).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })
+            : "Time TBD";
         const forecast = e.forecast ? ` | Forecast: \`${e.forecast}\`` : "";
         const previous = e.previous ? ` | Previous: \`${e.previous}\`` : "";
         return {
             name: `🗓 ${e.title || e.country}${e.currency ? ` (${e.currency})` : ""}`,
-            value: `**When:** ${dateStr} ET${forecast}${previous}\n*${getEventDescription(e.title)}*`,
+            value: `**Time:** ${timeStr} ET${forecast}${previous}\n*${getEventDescription(e.title)}*`,
             inline: false,
         };
     });
 
     const embed = new EmbedBuilder()
-        .setTitle(`📅 High-Impact Economic Events — Week of ${weekStr}`)
+        .setTitle(`⚡ ${events.length} High-Impact Event${events.length > 1 ? "s" : ""} Today — ${dateStr}`)
         .setDescription(
-            "These are the **high-impact** macro releases this week that could cause significant volatility on **NQ** and **Gold**.\n\n" +
-            "⚡ **Pro tip:** Consider reducing size or staying flat during the 5 minutes before and after each release."
+            "These USD releases **move NQ and Gold**. Plan your trades accordingly.\n\n" +
+            "⚡ **Pro tip:** Reduce size or stay flat 5 min before and after each release."
         )
-        .setColor(COLORS.blue)
+        .setColor(COLORS.orange)
         .addFields(fields)
         .setFooter({ text: "Praxis Systems — Economic Calendar • Source: Forex Factory" })
         .setTimestamp();
 
     await ch.send({ embeds: [embed] });
-    console.log(`   📅 Economic calendar posted: ${events.length} high-impact events`);
+    console.log(`   📅 Economic calendar posted: ${events.length} high-impact events for today`);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FEATURE 4 — ONBOARDING HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+const ONBOARDING_PATH = path.join(__dirname, "onboarding.json");
+
+function loadOnboarding() {
+    try { return JSON.parse(fs.readFileSync(ONBOARDING_PATH, "utf8")); }
+    catch { return {}; }
+}
+
+function saveOnboarding(data) {
+    fs.writeFileSync(ONBOARDING_PATH, JSON.stringify(data, null, 2), "utf8");
+}
+
+const ONBOARDING_MESSAGES = [
+    {
+        day: 1,
+        delayHours: 0,
+        subject: "👋 Welcome to Praxis Systems!",
+        body:
+            "Hey! Welcome to **Praxis Systems** — glad to have you here. 🎉\n\n" +
+            "Here's a quick map of the server so you can hit the ground running:\n\n" +
+            "📖 **#server-guide** — full breakdown of all channels\n" +
+            "📅 **#economic-calendar** — daily high-impact macro events (auto-posted every weekday at 7AM ET)\n" +
+            "❓ **#faq** — answers to the most common questions\n" +
+            "🛠 **#platform-help** — step-by-step TradingView setup\n" +
+            "🤖 **#ask-praxis** — private AI assistant, available 24/7\n\n" +
+            "Your first step: go to **#general-chat** and click the alert role button for the signals you're subscribed to — that way you'll get pinged every time a signal fires. 🔔\n\n" +
+            "See you in the server!",
+    },
+    {
+        day: 2,
+        delayHours: 24,
+        subject: "📊 How to Read a Praxis Signal",
+        body:
+            "Day 2 — let's make sure you know how to read the signals so you can act on them confidently.\n\n" +
+            "**Every signal looks like this:**\n" +
+            "```\n🟢 LONG — Gold (GC)\nEntry:  2,640.00\nSL:     2,618.00    ← your max loss — exit HERE if hit\nTP1:    2,660.00    ← first target, bank partial profit\nTP2:    2,680.00    ← second target\nTP3:    2,710.00    ← final target, max profit\n```\n\n" +
+            "**Risk Rules:**\n" +
+            "• Never risk more than **1-2% of your account** per trade\n" +
+            "• If SL is hit → **exit immediately**. No averaging down.\n" +
+            "• You don't have to take every signal — quality over quantity\n\n" +
+            "⚠️ *These are algorithmic signals, not financial advice. Always manage your own risk.*",
+    },
+    {
+        day: 3,
+        delayHours: 48,
+        subject: "🖥 Setting Up Your TradingView Indicator",
+        body:
+            "Day 3 — let's get you set up with the TradingView indicator so you can see signals live on your chart.\n\n" +
+            "**Step 1 — Register your TradingView username**\n" +
+            "Run this in any channel:\n" +
+            "```\n/tradingview set username:YourTVUsername\n```\nAn admin will add you to the invite-only script access list.\n\n" +
+            "**Step 2 — Add the indicator to your chart**\n" +
+            "1. Open TradingView → your Gold or NQ chart\n" +
+            "2. Click **Indicators** → **Invite-Only Scripts**\n" +
+            "3. Find the Praxis indicator and click it\n\n" +
+            "**Step 3 — Check #platform-help for screenshots**\n" +
+            "Full step-by-step guide with visuals is in **#platform-help**.\n\n" +
+            "You can also ask the AI assistant in **#ask-praxis** anything — it knows the full setup process. 🤖\n\n" +
+            "Good luck and trade safe! 🎯",
+    },
+];
+
+async function sendOnboardingDm(userId, msg) {
+    try {
+        const user = await client.users.fetch(userId);
+        await user.send(`**${msg.subject}**\n\n${msg.body}`);
+    } catch (e) {
+        console.warn(`   ⚠ Could not send onboarding DM to ${userId}:`, e.message);
+    }
+}
+
+// Called when a user gets the "Free" role
+async function startOnboarding(userId, username) {
+    const onboarding = loadOnboarding();
+    if (onboarding[userId]) return; // already enrolled
+
+    onboarding[userId] = {
+        username,
+        enrolledAt: Date.now(),
+        sentDays: [],
+    };
+    saveOnboarding(onboarding);
+
+    // Send Day 1 immediately
+    const day1 = ONBOARDING_MESSAGES.find((m) => m.day === 1);
+    if (day1) {
+        await sendOnboardingDm(userId, day1);
+        onboarding[userId].sentDays.push(1);
+        saveOnboarding(onboarding);
+        console.log(`   📬 Started onboarding for ${username} — Day 1 sent`);
+    }
 }
 
 // ── Onboarding Queue Processor ────────────────────────────────────────────────
